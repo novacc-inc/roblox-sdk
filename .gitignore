@@ -1,0 +1,11 @@
+# Project place file
+/roblox-sdk.rbxlx
+
+# Roblox Studio lock files
+/*.rbxlx.lock
+/*.rbxl.lock
+
+sourcemap.json
+/.vscode
+aftman.toml
+default.project.json
