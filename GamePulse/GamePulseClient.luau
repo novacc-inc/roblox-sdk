@@ -13,10 +13,74 @@ GamePulseClient._endpointUrl = nil :: string?
 GamePulseClient._serverStart = nil :: DateTime?
 GamePulseClient._serverEnded = false
 GamePulseClient._started = false
+GamePulseClient._eventQueue = {} :: { any }
+GamePulseClient._batchWorkerRunning = false
 
 local DEFAULT_ENDPOINT_URL = "http://localhost:3000/vacuum"
+local BATCH_INTERVAL_SECONDS = 60
+local MAX_BATCH_JSON_BYTES = 1024 * 1024
 
 local playerJoinTimes: { [number]: number } = {}
+
+local function encodePayload(events: { any }): string
+	return HttpService:JSONEncode({
+		api_key = GamePulseClient._apiKey,
+		events = events,
+	})
+end
+
+local function flushQueue()
+	if #GamePulseClient._eventQueue == 0 then
+		return
+	end
+
+	local eventsToSend = GamePulseClient._eventQueue
+	GamePulseClient._eventQueue = {}
+
+	local ok, err = pcall(function()
+		local json = encodePayload(eventsToSend)
+
+		if #json > MAX_BATCH_JSON_BYTES then
+			error(`batch payload exceeded {MAX_BATCH_JSON_BYTES}B limit!`)
+		end
+
+		HttpService:PostAsync(GamePulseClient._endpointUrl, json, Enum.HttpContentType.ApplicationJson, false)
+	end)
+
+	if not ok then
+		warn("[GamePulseClient] Failed to send batch: " .. tostring(err))
+		for _, queuedEvent in eventsToSend do
+			table.insert(GamePulseClient._eventQueue, queuedEvent)
+		end
+	end
+end
+
+local function startBatchWorker()
+	if GamePulseClient._serverEnded then
+		warn("[GamePulseClient] Cannot start batch worker; server has already ended.")
+		return
+	end
+
+	if GamePulseClient._batchWorkerRunning then
+		warn("[GamePulseClient] Batch worker is already running.")
+		return
+	end
+
+	GamePulseClient._batchWorkerRunning = true
+
+	task.spawn(function()
+		while not GamePulseClient._serverEnded do
+			task.wait(BATCH_INTERVAL_SECONDS)
+
+			if GamePulseClient._serverEnded then
+				GamePulseClient._batchWorkerRunning = false
+				break
+			end
+
+			flushQueue()
+		end
+	end)
+end
 
 local function getSHA256(input: string): (string, buffer)
 	return cryptography.Hashing.SHA2.SHA256(buffer.fromstring(input))
@@ -58,6 +122,7 @@ function GamePulseClient.Start()
 	end
 
 	GamePulseClient._started = true
+	startBatchWorker()
 
 	GamePulseClient._serverStart = DateTime.now().UnixTimestampMillis
 	GamePulseClient.Send(GamePulseEvent.new("server_start"))
@@ -99,14 +164,28 @@ function GamePulseClient.OnGameClose()
 	for userId, joinTime in playerJoinTimes do
 		onSessionEnd(userId, currentTime)
 	end
+
+	flushQueue()
 end
 
 function GamePulseClient.Send(event: GamePulseEvent.GamePulseEvent)
-	local json = HttpService:JSONEncode({
-		api_key = GamePulseClient._apiKey,
-		events = { Utility.objectToSnakeCase(event) },
-	})
-	HttpService:PostAsync(GamePulseClient._endpointUrl, json, Enum.HttpContentType.ApplicationJson, false)
+	local encodedEvent = Utility.objectToSnakeCase(event)
+
+	local eventsWithIncoming = table.clone(GamePulseClient._eventQueue)
+	table.insert(eventsWithIncoming, encodedEvent)
+
+	local combinedPayload = encodePayload(eventsWithIncoming)
+	if #combinedPayload > MAX_BATCH_JSON_BYTES then
+		flushQueue()
+
+		local singleEventPayload = encodePayload({ encodedEvent })
+		if #singleEventPayload > MAX_BATCH_JSON_BYTES then
+			warn(`[GamePulseClient] Dropping event; single-event payload exceeds {MAX_BATCH_JSON_BYTES}B limit.`)
+			return
+		end
+	end
+
+	table.insert(GamePulseClient._eventQueue, encodedEvent)
 end
 
 return GamePulseClient
