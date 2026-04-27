@@ -4,6 +4,7 @@ local Players = game:GetService("Players")
 
 local GamePulseEvent = require(script.Parent.GamePulseEvent)
 local Utility = require(script.Parent.Utility)
+local cryptography = require(script.Parent.cryptography)
 
 local GamePulseClient = {}
 GamePulseClient._configured = false
@@ -16,6 +17,22 @@ GamePulseClient._started = false
 local DEFAULT_ENDPOINT_URL = "http://localhost:3000/vacuum"
 
 local playerJoinTimes: { [number]: number } = {}
+
+local function getSHA256(input: string): (string, buffer)
+	return cryptography.Hashing.SHA2.SHA256(buffer.fromstring(input))
+end
+
+local function onSessionEnd(userId: number, endTime: number)
+	local joinTime = playerJoinTimes[userId]
+	local sessionDuration = endTime - joinTime
+
+	GamePulseClient.Send(GamePulseEvent.new("session_end", {
+		player_id = getSHA256(tostring(userId)),
+		duration_seconds = string.format("%.2f", sessionDuration / 1000),
+	}))
+
+	playerJoinTimes[userId] = nil
+end
 
 function GamePulseClient.Configure(apiKey: string, endpointUrl: string?)
 	assert(apiKey, "[GamePulseClient] API key is required for configuration.")
@@ -58,18 +75,12 @@ function GamePulseClient.OnPlayerAdded(player: Player)
 	playerJoinTimes[player.UserId] = DateTime.now().UnixTimestampMillis
 
 	GamePulseClient.Send(GamePulseEvent.new("session_start", {
-		user_id = player.UserId,
+		player_id = getSHA256(tostring(player.UserId)),
 	}))
 end
 
 function GamePulseClient.OnPlayerRemoved(player: Player)
-	local duration = DateTime.now().UnixTimestampMillis - playerJoinTimes[player.UserId]
-	GamePulseClient.Send(GamePulseEvent.new("session_end", {
-		user_id = player.UserId,
-		duration_seconds = string.format("%.2f", duration / 1000),
-	}))
-
-	playerJoinTimes[player.UserId] = nil
+	onSessionEnd(player.UserId, DateTime.now().UnixTimestampMillis)
 end
 
 function GamePulseClient.OnGameClose()
@@ -86,11 +97,7 @@ function GamePulseClient.OnGameClose()
 	}))
 
 	for userId, joinTime in playerJoinTimes do
-		local sessionDuration = currentTime - joinTime
-		GamePulseClient.Send(GamePulseEvent.new("session_end", {
-			user_id = userId,
-			duration_seconds = string.format("%.2f", sessionDuration / 1000),
-		}))
+		onSessionEnd(userId, currentTime)
 	end
 end
 
