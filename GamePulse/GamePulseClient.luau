@@ -4,7 +4,7 @@ local Players = game:GetService("Players")
 
 local GamePulseEvent = require(script.Parent.GamePulseEvent)
 local Utility = require(script.Parent.Utility)
-local cryptography = require(script.Parent.cryptography)
+local SHA256 = require(script.Parent.SHA256)
 
 local GamePulseClient = {}
 GamePulseClient._configured = false
@@ -83,7 +83,7 @@ local function startBatchWorker()
 end
 
 local function getSHA256(input: string): (string, buffer)
-	return cryptography.Hashing.SHA2.SHA256(buffer.fromstring(input))
+	return SHA256(buffer.fromstring(input))
 end
 
 local function onSessionEnd(userId: number, endTime: number)

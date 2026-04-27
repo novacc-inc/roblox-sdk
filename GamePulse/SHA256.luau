@@ -1,19 +1,19 @@
 --[=[
-	Cryptography library: SHA224
-	
-	Sizes:
-		Digest: 28 bytes
+	Taken from https://github.com/daily3014/rbx-cryptography
+	Cryptography library: SHA256
 
+	Sizes:
+		Digest: 32 bytes
+	
 	Return type: string
 	Example usage:
 		local Message = buffer.fromstring("Hello World")
-		local Result = SHA224(Message)
+		local Result = SHA256(Message)
 --]=]
 
 --!strict
 --!optimize 2
 --!native
-
 local CONSTANTS = buffer.create(256) do -- CONSTANTS = k
 	local RoundConstants = {
 		0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -51,9 +51,9 @@ local function PreProcess(Contents: buffer): (buffer, number)
 end
 
 local OFFSETS = buffer.create(256)
-local function DigestBlocks(Blocks: buffer, Length: number): (number, number, number, number, number, number, number)
-	local A, B, C, D = 0xc1059ed8, 0x367cd507, 0x3070dd17, 0xf70e5939
-	local E, F, G, H = 0xffc00b31, 0x68581511, 0x64f98fa7, 0xbefa4fa4
+local function DigestBlocks(Blocks: buffer, Length: number): (number, number, number, number, number, number, number, number)
+	local A, B, C, D = 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a
+	local E, F, G, H = 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
 
 	local Offsets = OFFSETS
 	local Constants = CONSTANTS
@@ -95,17 +95,17 @@ local function DigestBlocks(Blocks: buffer, Length: number): (number, number, nu
 			bit32.bor(E + OldE, 0),
 			bit32.bor(F + OldF, 0),
 			bit32.bor(G + OldG, 0),
-			bit32.bor(H + OldH, 0)
+			bit32.bor(H + OldH, 0) :: number
 	end
 
-	return A, B, C, D, E, F, G
+	return A, B, C, D, E, F, G, H
 end
 
-local function SHA224(Message: buffer): (string, buffer)
+local function SHA256(Message: buffer): (string, buffer)
 	local ProcessedMessage, Length = PreProcess(Message)
-	local A, B, C, D, E, F, G = DigestBlocks(ProcessedMessage, Length)
+	local A, B, C, D, E, F, G, H = DigestBlocks(ProcessedMessage, Length)
 
-	local Digest = buffer.create(28)
+	local Digest = buffer.create(32)
 
 	buffer.writeu32(Digest, 0, A)
 	buffer.writeu32(Digest, 4, B)
@@ -114,8 +114,9 @@ local function SHA224(Message: buffer): (string, buffer)
 	buffer.writeu32(Digest, 16, E)
 	buffer.writeu32(Digest, 20, F)
 	buffer.writeu32(Digest, 24, G)
+	buffer.writeu32(Digest, 28, H)
 
-	return string.format("%08x%08x%08x%08x%08x%08x%08x", A, B, C, D, E, F, G), Digest
+	return string.format("%08x%08x%08x%08x%08x%08x%08x%08x", A, B, C, D, E, F, G, H), Digest
 end
 
-return SHA224
+return SHA256
