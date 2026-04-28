@@ -49,13 +49,14 @@ function GamePulse.Init(apiKey: string, endpointUrl: string?)
 	Event.Name = CLIENT_EVENT_NAME
 
 	Event.OnServerEvent:Connect(function(player: Player, eventName: string, data: any)
+		data.player_id = GamePulse.GetHashedUserId(player.UserId)
 		GamePulse.Event(eventName, data)
 	end)
 end
 
 --[[
 	Sends an event to GamePulse with the given name and data. Must call Init() on the server before using this method.
-	If called from the client, the server-side event will be fired which then sends the event to GamePulse.
+	If called from the client, the server-side event will be fired which then sends the event to GamePulse with an additional player_id field. This field is reserved and will be overwritten if included in client-sent events.
 ]]
 function GamePulse.Event(eventName: string, data: any)
 	if not GamePulse._initialized then
@@ -66,8 +67,22 @@ function GamePulse.Event(eventName: string, data: any)
 	if isServer then
 		GamePulseClient.Send(GamePulseEvent.new(eventName, data))
 	else
+		if data.player_id then
+			warn(
+				"[GamePulse] Event data contains player_id field which is reserved for sending events from the client. It will be overwritten."
+			)
+		end
 		GamePulse._event:FireServer(eventName, data)
 	end
+end
+
+--[[
+	Returns a one-way hash using SHA256 for the given userId.
+	Useful for tracking player-specific events without storing personally identifiable information.
+	Keep in mind that sending events from the client will automatically include a player_id field with the player's hashed UserId, so this method is only necessary if you need to hash UserIds on the server.
+]]
+function GamePulse.GetHashedUserId(userId: number): (string, buffer)
+	return GamePulseClient.GetSHA256(userId)
 end
 
 return GamePulse

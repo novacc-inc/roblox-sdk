@@ -25,6 +25,11 @@ function Utility.objectToSnakeCase(obj: any): any
 	local newObj = {}
 	for key, value in obj do
 		local snakeKey = Utility.toSnakeCase(key)
+		if obj[snakeKey] ~= nil then
+			newObj[snakeKey] = Utility.objectToSnakeCase(obj[snakeKey])
+			continue
+		end
+
 		newObj[snakeKey] = Utility.objectToSnakeCase(value)
 	end
 

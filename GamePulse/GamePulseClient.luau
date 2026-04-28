@@ -87,16 +87,12 @@ local function startBatchWorker()
 	end)
 end
 
-local function getSHA256(input: string): (string, buffer)
-	return SHA256(buffer.fromstring(input))
-end
-
 local function onSessionEnd(userId: number, endTime: number)
 	local joinTime = playerJoinTimes[userId]
 	local sessionDuration = endTime - joinTime
 
 	GamePulseClient.Send(GamePulseEvent.new("session_end", {
-		player_id = getSHA256(tostring(userId)),
+		player_id = GamePulseClient.GetSHA256(userId),
 		duration_seconds = string.format("%.2f", sessionDuration / 1000),
 	}))
 
@@ -145,7 +141,7 @@ function GamePulseClient.OnPlayerAdded(player: Player)
 	playerJoinTimes[player.UserId] = DateTime.now().UnixTimestampMillis
 
 	GamePulseClient.Send(GamePulseEvent.new("session_start", {
-		player_id = getSHA256(tostring(player.UserId)),
+		player_id = GamePulseClient.GetSHA256(player.UserId),
 	}))
 end
 
@@ -191,6 +187,10 @@ function GamePulseClient.Send(event: GamePulseEvent.GamePulseEvent)
 	end
 
 	table.insert(GamePulseClient._eventQueue, encodedEvent)
+end
+
+function GamePulseClient.GetSHA256(input: string | number): (string, buffer)
+	return SHA256(buffer.fromstring(tostring(input)))
 end
 
 return GamePulseClient
