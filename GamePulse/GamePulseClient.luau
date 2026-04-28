@@ -6,6 +6,10 @@ local GamePulseEvent = require(script.Parent.GamePulseEvent)
 local Utility = require(script.Parent.Utility)
 local SHA256 = require(script.Parent.SHA256)
 
+local DEFAULT_ENDPOINT_URL = "http://localhost:3000/vacuum"
+local BATCH_INTERVAL_SECONDS = 60
+local MAX_BATCH_JSON_BYTES = 1024 * 1024
+
 local GamePulseClient = {}
 GamePulseClient._configured = false
 GamePulseClient._apiKey = nil :: string?
@@ -16,10 +20,6 @@ GamePulseClient._started = false
 GamePulseClient._eventQueue = {} :: { any }
 GamePulseClient._batchWorkerRunning = false
 
-local DEFAULT_ENDPOINT_URL = "http://localhost:3000/vacuum"
-local BATCH_INTERVAL_SECONDS = 60
-local MAX_BATCH_JSON_BYTES = 1024 * 1024
-
 local playerJoinTimes: { [number]: number } = {}
 
 local function encodePayload(events: { any }): string
@@ -29,14 +29,7 @@ local function encodePayload(events: { any }): string
 	})
 end
 
-local function flushQueue()
-	if #GamePulseClient._eventQueue == 0 then
-		return
-	end
-
-	local eventsToSend = GamePulseClient._eventQueue
-	GamePulseClient._eventQueue = {}
-
+local function sendHttpRequest(eventsToSend: { any })
 	local ok, err = pcall(function()
 		local json = encodePayload(eventsToSend)
 
@@ -49,9 +42,21 @@ local function flushQueue()
 
 	if not ok then
 		warn("[GamePulseClient] Failed to send batch: " .. tostring(err))
-		for _, queuedEvent in eventsToSend do
-			table.insert(GamePulseClient._eventQueue, queuedEvent)
-		end
+	end
+end
+
+local function flushQueue(synchronous: boolean?)
+	if #GamePulseClient._eventQueue == 0 then
+		return
+	end
+
+	local eventsToSend = GamePulseClient._eventQueue
+	GamePulseClient._eventQueue = {}
+
+	if synchronous then
+		sendHttpRequest(eventsToSend)
+	else
+		task.spawn(sendHttpRequest, eventsToSend)
 	end
 end
 
@@ -165,7 +170,7 @@ function GamePulseClient.OnGameClose()
 		onSessionEnd(userId, currentTime)
 	end
 
-	flushQueue()
+	flushQueue(true)
 end
 
 function GamePulseClient.Send(event: GamePulseEvent.GamePulseEvent)
